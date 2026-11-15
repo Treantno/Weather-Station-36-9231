@@ -179,9 +179,23 @@ static void fmt_v(char *b, size_t n, double v, const char *unit)
     if (isnan(v)) snprintf(b, n, "--");
     else snprintf(b, n, "%.1f %s", v, unit);
 }
+/* Print s left-aligned in a field of w terminal columns. printf's %-Ns
+ * counts bytes, which misaligns multi-byte UTF-8 such as "°". */
+static void pad(const char *s, int w)
+{
+    int cols = 0;
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++)
+        cols += (*p & 0xc0) != 0x80; /* count non-continuation bytes */
+    fputs(s, stdout);
+    for (; cols < w; cols++)
+        putchar(' ');
+}
+
 static void row(const char *label, const char *mx, const char *mn)
 {
-    printf("%-22s %-14s %s\n", label, mx, mn);
+    pad(label, 23);
+    pad(mx, 15);
+    printf("%s\n", mn);
 }
 static void row_t(const char *label, const double v[2])
 {

@@ -450,6 +450,16 @@ int main(int argc, char **argv)
     if (!strcmp(cmd, "mqtt"))
         return cmd_mqtt(&m, interval, verbose);
 
+    static const char *const known[] = {"read", "maxmin", "info", "dump", "raw", "synctime"};
+    int ok = 0;
+    for (size_t i = 0; i < sizeof known / sizeof *known; i++)
+        ok |= !strcmp(cmd, known[i]);
+    if (!ok) {
+        fprintf(stderr, "unknown command '%s'\n", cmd);
+        usage(stderr);
+        return 2;
+    }
+
     ws_station *s = open_or_die();
     int rc = 0;
     if (!strcmp(cmd, "read")) {

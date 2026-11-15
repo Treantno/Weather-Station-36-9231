@@ -4,8 +4,9 @@ CFLAGS  += -std=c11 -Wall -Wextra -D_DEFAULT_SOURCE
 PKG     ?= pkg-config
 HIDAPI  ?= hidapi-hidraw
 
-DEPS_CFLAGS := $(shell $(PKG) --cflags $(HIDAPI) libmosquitto)
-DEPS_LIBS   := $(shell $(PKG) --libs $(HIDAPI) libmosquitto)
+# recursively expanded, so pkg-config only runs when building wsmqtt
+DEPS_CFLAGS = $(shell $(PKG) --cflags $(HIDAPI) libmosquitto)
+DEPS_LIBS   = $(shell $(PKG) --libs $(HIDAPI) libmosquitto)
 
 PREFIX  ?= /usr/local
 BINDIR  ?= $(PREFIX)/bin

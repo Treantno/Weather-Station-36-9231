@@ -279,3 +279,10 @@ void ws_synctime_req(uint8_t req[9], int year, int mon, int day, int hour,
     req[7] = (uint8_t)mon;
     req[8] = (uint8_t)(year - 2000);
 }
+
+int ws_synctime_status(const uint8_t *resp, int n)
+{
+    if (n < 4 || resp[0] < 4)
+        return -1;
+    return resp[2];
+}

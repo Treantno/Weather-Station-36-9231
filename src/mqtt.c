@@ -26,6 +26,7 @@ void wsm_defaults(struct wsm_cfg *c)
     snprintf(c->dev_name, sizeof c->dev_name, "Weather Station");
     c->discovery = 1;
     c->maxmin = 1;
+    c->clock_sync = 1;
 }
 
 static void on_connect(struct mosquitto *m, void *ud, int rc)

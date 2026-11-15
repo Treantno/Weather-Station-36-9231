@@ -179,12 +179,41 @@ static void test_frames(void)
     CHECK(memcmp(st, exp, 9) == 0);
 }
 
+static void test_synctime(void)
+{
+    uint8_t st[9], f[16];
+
+    /* new year boundary, fraction rounding: 0..62 ms -> 0, 63 ms -> 1, 937 -> 7 */
+    ws_synctime_req(st, 2027, 1, 1, 0, 0, 0, 62);
+    static const uint8_t ny[] = {0x0a, 0x83, 0, 0, 0, 0, 1, 1, 27};
+    CHECK(memcmp(st, ny, 9) == 0);
+    ws_synctime_req(st, 2026, 12, 31, 23, 59, 59, 63);
+    CHECK(st[2] == 1 && st[3] == 59 && st[5] == 23 && st[6] == 31 && st[7] == 12 && st[8] == 26);
+    ws_synctime_req(st, 2026, 1, 1, 0, 0, 0, 937);
+    CHECK(st[2] == 7);
+
+    /* the request frame is 10 bytes with the checksum appended */
+    CHECK(ws_frame_build(f, ny, 9) == 10);
+    CHECK(f[9] == ws_cksum(ny, 9));
+
+    /* reply status byte */
+    uint8_t ok[] = {0x04, 0x83, 0x00, 0x00};
+    ok[3] = ws_cksum(ok, 3);
+    CHECK(ws_frame_check(ok, sizeof ok, 0x83) == 0);
+    CHECK(ws_synctime_status(ok, sizeof ok) == 0);
+    uint8_t bad[] = {0x04, 0x83, 0x09, 0x00};
+    bad[3] = ws_cksum(bad, 3);
+    CHECK(ws_synctime_status(bad, sizeof bad) == 9);
+    CHECK(ws_synctime_status(ok, 3) == -1);
+}
+
 int main(void)
 {
     test_frames();
     test_record();
     test_packing();
     test_maxmin();
+    test_synctime();
     if (fails) {
         fprintf(stderr, "%d failure(s)\n", fails);
         return 1;

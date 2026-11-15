@@ -30,7 +30,7 @@ wsmqtt maxmin             # the station's recorded max/min values (--json too)
 wsmqtt info               # raw device info frame
 wsmqtt dump               # raw live-record and max/min frames (hex)
 wsmqtt raw 03 04          # send any request; checksum is appended
-wsmqtt synctime           # set the station clock from this machine
+wsmqtt synctime           # set the station clock to this machine's local time
 wsmqtt -H broker -u user -P pass mqtt -v   # publish every 60 s
 ```
 
@@ -72,6 +72,23 @@ Their discovery configs are sent the first time each one appears.
 Configure with `/etc/wsmqtt.conf` (see `contrib/wsmqtt.conf.example`) or with
 command-line options (`wsmqtt --help`). Options override the file. The password
 can also come from `WSMQTT_PASSWORD`.
+
+## Station clock
+
+The station has no radio-clock receiver, so its clock drifts unless the host
+sets it. Like WeatherHome, `wsmqtt mqtt` sets the clock to the host's
+**local time** at startup, whenever the station is reconnected, and every time
+the local hour changes, which also picks up DST switches. The host's timezone
+(`timedatectl`) therefore decides what the console shows. Turn it off with
+`clock_sync = no` or `--no-clock-sync`. Each sync is logged as
+`clock synced to …`.
+
+The station cannot report its clock back, so check the console display to
+confirm a sync.
+
+It is safe to run one-off commands such as `wsmqtt synctime` or `wsmqtt read`
+while the service is running. Each request/reply holds a lock on the hidraw
+device, so the two processes don't mix up replies.
 
 ## Run as a service
 

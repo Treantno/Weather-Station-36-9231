@@ -45,6 +45,7 @@ static void usage(FILE *f)
 "  -d, --discovery PREFIX HA discovery prefix (default homeassistant)\n"
 "      --no-discovery     do not publish HA discovery configs\n"
 "      --no-maxmin        do not publish the max/min memory\n"
+"      --no-clock-sync    'mqtt' does not set the station clock (default: hourly)\n"
 "      --device-id ID     unique id base (default weatherhome_0040)\n"
 "      --tls              use TLS (with --cafile or system CAs)\n"
 "      --cafile FILE      CA certificate for TLS\n"
@@ -82,6 +83,7 @@ static int set_opt(struct wsm_cfg *m, int *interval, const char *k, const char *
     else if (!strcmp(k, "discovery_prefix")) CPY(m->disc_prefix, v);
     else if (!strcmp(k, "discovery")) m->discovery = !strcmp(v, "1") || !strcmp(v, "true") || !strcmp(v, "yes");
     else if (!strcmp(k, "maxmin")) m->maxmin = !strcmp(v, "1") || !strcmp(v, "true") || !strcmp(v, "yes");
+    else if (!strcmp(k, "clock_sync")) m->clock_sync = !strcmp(v, "1") || !strcmp(v, "true") || !strcmp(v, "yes");
     else if (!strcmp(k, "device_id")) CPY(m->dev_id, v);
     else if (!strcmp(k, "device_name")) CPY(m->dev_name, v);
     else if (!strcmp(k, "tls")) m->tls = !strcmp(v, "1") || !strcmp(v, "true") || !strcmp(v, "yes");
@@ -329,7 +331,10 @@ static int cmd_raw(ws_station *s, int argc, char **argv)
     return cmd_simple(s, req, n, "");
 }
 
-static int cmd_synctime(ws_station *s)
+/* Set the station clock to this host's local time (the station has no
+ * radio receiver and no way to read its clock back). Returns the local hour
+ * that was synced, or -1 on failure. Messages go to f. */
+static int sync_clock(ws_station *s, FILE *f)
 {
     struct timeval tv;
     struct tm tm;
@@ -339,13 +344,33 @@ static int cmd_synctime(ws_station *s)
     ws_synctime_req(req, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour,
                     tm.tm_min, tm.tm_sec, (int)(tv.tv_usec / 1000));
     uint8_t resp[WS_MAX_FRAME];
-    if (ws_exchange(s, req, sizeof req, resp) < 0) {
-        fprintf(stderr, "synctime: %s\n", ws_error(s));
-        return 1;
+    int n = ws_exchange(s, req, sizeof req, resp);
+    if (n < 0) {
+        fprintf(stderr, "clock sync: %s\n", ws_error(s));
+        return -1;
     }
-    printf("station clock set to %04d-%02d-%02d %02d:%02d:%02d\n", tm.tm_year + 1900,
-           tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
-    return 0;
+    int st = ws_synctime_status(resp, n);
+    if (st != 0) {
+        fprintf(stderr, "clock sync: station rejected the time (status %d)\n", st);
+        return -1;
+    }
+    fprintf(f, "clock synced to %04d-%02d-%02d %02d:%02d:%02d\n", tm.tm_year + 1900,
+            tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+    fflush(f);
+    return tm.tm_hour;
+}
+
+static int cmd_synctime(ws_station *s)
+{
+    return sync_clock(s, stdout) < 0 ? 1 : 0;
+}
+
+static int local_hour(void)
+{
+    time_t t = time(NULL);
+    struct tm tm;
+    localtime_r(&t, &tm);
+    return tm.tm_hour;
 }
 
 static void sleep_interruptible(int sec)
@@ -364,6 +389,7 @@ static int cmd_mqtt(struct wsm_cfg *m, int interval, int verbose)
         return 1;
     ws_station *s = NULL;
     int failures = 0;
+    int synced_hour = -1; /* like WeatherHome: resync whenever the local hour changes */
     while (!stop) {
         if (!s) {
             s = ws_open();
@@ -375,6 +401,7 @@ static int cmd_mqtt(struct wsm_cfg *m, int interval, int verbose)
             }
             fprintf(stderr, "station opened\n");
             failures = 0;
+            synced_hour = -1; /* it may have lost power: resync now */
         }
         struct ws_record r;
         struct ws_maxmin mm;
@@ -389,6 +416,12 @@ static int cmd_mqtt(struct wsm_cfg *m, int interval, int verbose)
             /* a failed max/min read is not fatal; the next round retries */
             if (m->maxmin && read_maxmin(s, &r, &mm) == 0)
                 wsm_publish_maxmin(&mm);
+            /* a failed sync is retried next round (synced_hour stays) */
+            if (m->clock_sync && local_hour() != synced_hour) {
+                int h = sync_clock(s, stderr);
+                if (h >= 0)
+                    synced_hour = h;
+            }
         } else {
             ws_close(s); /* reopen on next round (USB unplug etc.) */
             s = NULL;
@@ -417,14 +450,14 @@ int main(int argc, char **argv)
     if (envpw)
         CPY(m.pass, envpw);
 
-    enum { O_NODISC = 256, O_DEVID, O_TLS, O_CAFILE, O_NOMAXMIN };
+    enum { O_NODISC = 256, O_DEVID, O_TLS, O_CAFILE, O_NOMAXMIN, O_NOCLOCK };
     static const struct option lo[] = {
         {"config", 1, 0, 'c'},  {"json", 0, 0, 'j'},       {"host", 1, 0, 'H'},
         {"port", 1, 0, 'p'},    {"user", 1, 0, 'u'},       {"password", 1, 0, 'P'},
         {"topic", 1, 0, 't'},   {"discovery", 1, 0, 'd'},  {"no-discovery", 0, 0, O_NODISC},
         {"device-id", 1, 0, O_DEVID}, {"tls", 0, 0, O_TLS}, {"cafile", 1, 0, O_CAFILE},
         {"interval", 1, 0, 'i'}, {"verbose", 0, 0, 'v'},   {"help", 0, 0, 'h'},
-        {"no-maxmin", 0, 0, O_NOMAXMIN},
+        {"no-maxmin", 0, 0, O_NOMAXMIN}, {"no-clock-sync", 0, 0, O_NOCLOCK},
         {0, 0, 0, 0}};
     int o;
     while ((o = getopt_long(argc, argv, "c:jH:p:u:P:t:d:i:vh", lo, NULL)) != -1) {
@@ -439,6 +472,7 @@ int main(int argc, char **argv)
         case 'd': CPY(m.disc_prefix, optarg); break;
         case O_NODISC: m.discovery = 0; break;
         case O_NOMAXMIN: m.maxmin = 0; break;
+        case O_NOCLOCK: m.clock_sync = 0; break;
         case O_DEVID: CPY(m.dev_id, optarg); break;
         case O_TLS: m.tls = 1; break;
         case O_CAFILE: CPY(m.cafile, optarg); m.tls = 1; break;

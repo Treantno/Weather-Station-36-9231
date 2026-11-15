@@ -38,7 +38,7 @@ Each request and reply is a frame:
 | ReadBlockInfo | `07 02 01 addrLo addrHi n` | |
 | ReadHisData | `07 02 02 addrLo addrHi n` | |
 | ReadHisInfo | `04 02 03` | |
-| SyncTime | `0A 83 frac sec min hour day month year-2000` | `frac` = milliseconds/125 (0..7) |
+| SyncTime | `0A 83 frac sec min hour day month year-2000` | `frac` = (ms+62)/125, capped at 7; see *Clock* |
 | ReadRecord (live) | `03 04` | 76-byte reply, see below |
 | ReadMaxMin | `03 05` | 116-byte reply |
 | ReadAlarm / WriteAlarm | `len 06 …` / `len 86 …` | |
@@ -46,6 +46,20 @@ Each request and reply is a frame:
 | ReadParam / WriteParam | `len 08 …` / `len 88 …` | |
 | ReadGraph | `05 09 type channel` | |
 | ReadCalib / WriteCalib | `len 0A …` / `len 8A …` | |
+
+## Clock
+
+* SyncTime sets the console clock to exactly the fields sent. WeatherHome
+  sends the PC's **local** time (`GetLocalTime`), not UTC.
+* The reply is `[len] 83 status …`, where `status == 0` means accepted.
+* There is **no command to read the clock back**. No other reply carries the
+  current time, so a sync can only be checked on the console display.
+* WeatherHome resyncs automatically: its timer (`WeatherHome.exe` @ `0x41ecc0`)
+  sends SyncTime whenever the local hour differs from the last successfully
+  synced hour. That covers startup, each hour, and DST switches.
+* The firmware has time-format, time-zone, DST and "RCC Receive" settings in
+  the ReadParam frame (`03 08`, 27-byte reply). These are not decoded. Units
+  without a DCF77 receiver depend entirely on the host for the time.
 
 ## Live record (`03 04`)
 

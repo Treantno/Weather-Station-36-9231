@@ -16,6 +16,8 @@ struct wsm_cfg {
     char dev_name[64];
     int discovery;
     int maxmin; /* also poll and publish the max/min memory */
+    int clock_sync; /* 'mqtt' sets the station clock hourly (not MQTT-related,
+                       but it lives with the rest of the daemon config) */
     int tls;
     char cafile[192];
 };

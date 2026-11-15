@@ -79,8 +79,13 @@ int ws_decode_maxmin(const uint8_t *f, size_t n, const struct ws_record *live,
 /* JSON with keys like "indoor_temp_max", "ch1_humidity_min", "wind_speed_max". */
 int ws_maxmin_json(const struct ws_maxmin *m, char *buf, size_t sz);
 
-/* Build a SyncTime request body (without checksum, 9 bytes). */
+/* Build a SyncTime request body (without checksum, 9 bytes). The station
+ * displays exactly this time: pass local time, as WeatherHome does. */
 void ws_synctime_req(uint8_t req[9], int year, int mon, int day, int hour,
                      int min, int sec, int msec);
+
+/* Status byte of a SyncTime reply: 0 = accepted, >0 = station error,
+ * -1 = frame too short. */
+int ws_synctime_status(const uint8_t *resp, int n);
 
 #endif

@@ -13,6 +13,9 @@ client_id = wsmqtt
 # Also publish the station's max/min memory to <topic>/maxmin
 maxmin = yes
 
+# Set the station clock to this host's local time at startup and every hour
+clock_sync = yes
+
 # Home Assistant MQTT discovery
 discovery = yes
 discovery_prefix = homeassistant

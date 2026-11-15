@@ -1,0 +1,23 @@
+# /etc/wsmqtt.conf — command-line options override these values.
+host = localhost
+port = 1883
+#user = weather
+#password = secret
+#tls = yes
+#cafile = /etc/ssl/certs/my-ca.pem
+
+# Readings go to <topic>/state (JSON); availability to <topic>/status.
+topic = weatherhome
+client_id = wsmqtt
+
+# Also publish the station's max/min memory to <topic>/maxmin
+maxmin = yes
+
+# Home Assistant MQTT discovery
+discovery = yes
+discovery_prefix = homeassistant
+device_id = weatherhome_0040
+device_name = Weather Station
+
+# Poll interval in seconds (the station updates about once a minute)
+interval = 60

@@ -1,0 +1,8 @@
+# build outputs
+/wsmqtt
+/tests/test_decode
+*.o
+*.exe
+
+# local config
+/wsmqtt.conf

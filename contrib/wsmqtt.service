@@ -1,0 +1,19 @@
+[Unit]
+Description=WeatherHome USB weather station to MQTT
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+DynamicUser=yes
+SupplementaryGroups=plugdev
+# /etc/wsmqtt.conf is root-only (it holds the MQTT password); pass it in as a credential
+LoadCredential=wsmqtt.conf:/etc/wsmqtt.conf
+ExecStart=/usr/local/bin/wsmqtt --config ${CREDENTIALS_DIRECTORY}/wsmqtt.conf mqtt
+Restart=always
+RestartSec=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -394,6 +394,7 @@ static int cmd_mqtt(struct wsm_cfg *m, int interval, int verbose)
         if (!s) {
             s = ws_open();
             if (!s) {
+                wsm_set_station(0);
                 if (failures++ % 10 == 0)
                     fprintf(stderr, "station not found, retrying\n");
                 sleep_interruptible(10);
@@ -406,6 +407,7 @@ static int cmd_mqtt(struct wsm_cfg *m, int interval, int verbose)
         struct ws_record r;
         struct ws_maxmin mm;
         if (read_record(s, &r) == 0) {
+            wsm_set_station(1); /* before the state, so HA accepts it */
             wsm_publish(&r);
             if (verbose) {
                 char js[2048];
@@ -423,10 +425,13 @@ static int cmd_mqtt(struct wsm_cfg *m, int interval, int verbose)
                     synced_hour = h;
             }
         } else {
+            /* ws_exchange already retried 3 times: treat the station as gone */
+            wsm_set_station(0);
             ws_close(s); /* reopen on next round (USB unplug etc.) */
             s = NULL;
         }
-        sleep_interruptible(interval);
+        /* after a failure, look for the station again soon */
+        sleep_interruptible(s ? interval : 10);
     }
     ws_close(s);
     wsm_stop();

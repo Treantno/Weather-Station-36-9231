@@ -7,12 +7,17 @@
 
 static struct mosquitto *mosq;
 static const struct wsm_cfg *cfg;
-static volatile int need_discovery, need_discovery_mm;
+static volatile int need_discovery, need_discovery_mm, need_discovery_conn;
 static unsigned announced_ch; /* bitmask of channels with discovery sent */
 static int announced_base, announced_rain;
 static unsigned announced_mm_ch;
 static int announced_mm_base, announced_mm_rain;
-static char t_state[160], t_avail[160], t_maxmin[160];
+static char t_state[160], t_avail[160], t_maxmin[160], t_station[160];
+/* -1 unknown, 0 station missing/not answering, 1 station answering */
+static volatile int station_state = -1;
+static int announced_conn;
+
+static const char *onoff(int v) { return v ? "online" : "offline"; }
 
 void wsm_defaults(struct wsm_cfg *c)
 {
@@ -36,7 +41,11 @@ static void on_connect(struct mosquitto *m, void *ud, int rc)
         fprintf(stderr, "mqtt: connected\n");
         need_discovery = 1;
         need_discovery_mm = 1;
+        need_discovery_conn = 1;
         mosquitto_publish(m, NULL, t_avail, 6, "online", 1, true);
+        int st = station_state; /* republish in case the broker lost it */
+        if (st >= 0)
+            mosquitto_publish(m, NULL, t_station, (int)strlen(onoff(st)), onoff(st), 1, true);
     } else {
         fprintf(stderr, "mqtt: connect failed: %s\n", mosquitto_connack_string(rc));
     }
@@ -56,6 +65,7 @@ int wsm_start(const struct wsm_cfg *c)
     snprintf(t_state, sizeof t_state, "%s/state", c->prefix);
     snprintf(t_avail, sizeof t_avail, "%s/status", c->prefix);
     snprintf(t_maxmin, sizeof t_maxmin, "%s/maxmin", c->prefix);
+    snprintf(t_station, sizeof t_station, "%s/station", c->prefix);
 
     mosquitto_lib_init();
     mosq = mosquitto_new(c->client_id, true, NULL);
@@ -102,11 +112,13 @@ static void disc(const char *st, const char *key, const char *name, const char *
     int n;
     snprintf(topic, sizeof topic, "%s/sensor/%s/%s/config", cfg->disc_prefix,
              cfg->dev_id, key);
+    /* unavailable if either wsmqtt or the USB station is offline */
     n = snprintf(p, sizeof p,
                  "{\"name\":\"%s\",\"unique_id\":\"%s_%s\",\"object_id\":\"%s_%s\","
                  "\"state_topic\":\"%s\",\"value_template\":\"{{ value_json.%s }}\","
-                 "\"availability_topic\":\"%s\"",
-                 name, cfg->dev_id, key, cfg->dev_id, key, st, key, t_avail);
+                 "\"availability\":[{\"topic\":\"%s\"},{\"topic\":\"%s\"}],"
+                 "\"availability_mode\":\"all\"",
+                 name, cfg->dev_id, key, cfg->dev_id, key, st, key, t_avail, t_station);
     if (unit)
         n += snprintf(p + n, sizeof p - n, ",\"unit_of_measurement\":\"%s\"", unit);
     if (dclass)
@@ -120,6 +132,43 @@ static void disc(const char *st, const char *key, const char *name, const char *
              "\"manufacturer\":\"WeatherHome\",\"model\":\"TMU313X (ID0040)\"}}",
              cfg->dev_id, cfg->dev_name);
     pub(topic, p, 1);
+}
+
+/* Diagnostic binary sensor for the USB link. It depends only on wsmqtt's
+ * own status, so it stays visible (as "disconnected") when the station is
+ * unplugged and every weather sensor goes unavailable. */
+static void disc_connectivity(void)
+{
+    char topic[256], p[1024];
+    snprintf(topic, sizeof topic, "%s/binary_sensor/%s/station_connected/config",
+             cfg->disc_prefix, cfg->dev_id);
+    snprintf(p, sizeof p,
+             "{\"name\":\"Station connected\",\"unique_id\":\"%s_station_connected\","
+             "\"object_id\":\"%s_station_connected\",\"state_topic\":\"%s\","
+             "\"payload_on\":\"online\",\"payload_off\":\"offline\","
+             "\"availability_topic\":\"%s\",\"device_class\":\"connectivity\","
+             "\"entity_category\":\"diagnostic\","
+             "\"device\":{\"identifiers\":[\"%s\"],\"name\":\"%s\","
+             "\"manufacturer\":\"WeatherHome\",\"model\":\"TMU313X (ID0040)\"}}",
+             cfg->dev_id, cfg->dev_id, t_station, t_avail, cfg->dev_id, cfg->dev_name);
+    pub(topic, p, 1);
+}
+
+void wsm_set_station(int connected)
+{
+    connected = connected ? 1 : 0;
+    if (cfg && cfg->discovery && (!announced_conn || need_discovery_conn)) {
+        /* sent before the weather sensors so HA learns the device even if
+         * the station is missing at startup; resent after each reconnect */
+        need_discovery_conn = 0;
+        disc_connectivity();
+        announced_conn = 1;
+    }
+    if (connected == station_state)
+        return;
+    station_state = connected;
+    fprintf(stderr, "station %s\n", connected ? "online" : "offline");
+    pub(t_station, onoff(connected), 1);
 }
 
 static void send_discovery(const struct ws_record *r, int force)

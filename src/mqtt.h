@@ -29,6 +29,9 @@ int wsm_publish(const struct ws_record *r);
 /* Publish the max/min memory to <prefix>/maxmin (retained). */
 int wsm_publish_maxmin(const struct ws_maxmin *m);
 void wsm_set_online(int online);
+/* Report whether the USB station is answering. Call every poll round; it
+ * publishes <prefix>/station (retained) only when the state changes. */
+void wsm_set_station(int connected);
 void wsm_stop(void);
 
 #endif

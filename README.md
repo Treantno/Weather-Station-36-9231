@@ -59,6 +59,7 @@ Rain total             435.0 mm
 |---|---|
 | `weatherhome/state` | JSON reading, e.g. `{"indoor_temp":24.8,"indoor_humidity":46,"ch1_temp":6.6,…,"rain_total":435.0}` |
 | `weatherhome/maxmin` | retained JSON max/min memory, e.g. `{"indoor_temp_max":33.0,"indoor_temp_min":15.0,…,"wind_gust_max":18.2}` |
+| `weatherhome/station` | `online` / `offline` (retained): whether the USB station answers |
 | `weatherhome/status` | `online` / `offline` (retained, LWT) |
 | `homeassistant/sensor/weatherhome_0040/<key>/config` | retained HA discovery configs |
 
@@ -68,6 +69,22 @@ last cleared on the console; there are no timestamps. Turn them off with
 `--no-maxmin` or `maxmin = no`.
 Remote channels (CH1–CH8) are included only when a sensor reports on them.
 Their discovery configs are sent the first time each one appears.
+
+### Availability
+
+There are two levels of availability:
+
+* `weatherhome/status` says whether **wsmqtt** is running. It's set to `offline` on
+  a clean stop, or by the broker (last will) if the process dies.
+* `weatherhome/station` says whether the **USB station** answers. It goes
+  `offline` when a read fails (after retries) or the device is missing, and
+  `online` again on the first good read. wsmqtt looks for a missing station
+  every 10 s. An unplug is noticed at the next poll, within one interval.
+
+Every weather sensor is available only while **both** are `online`. A diagnostic
+**Station connected** binary sensor depends only on `weatherhome/status`, so
+Home Assistant can tell "bridge down" (everything unavailable) apart from
+"station unplugged" (Station connected = disconnected).
 
 Configure with `/etc/wsmqtt.conf` (see `contrib/wsmqtt.conf.example`) or with
 command-line options (`wsmqtt --help`). Options override the file. The password
